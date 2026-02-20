@@ -12,7 +12,7 @@ export function useSimulation() {
     isFuzzing,
     originalCode,
     contractFileName,
-    vulnerabilities,
+    generatedTestCode,
     addTerminalLog,
     stopFuzzing,
   } = usePipelineStore()
@@ -30,15 +30,23 @@ export function useSimulation() {
     const controller = new AbortController()
 
     async function run() {
-      addTerminalLog({ text: "Starting simulation...", type: "info" })
+      if (!generatedTestCode?.trim()) {
+        addTerminalLog({
+          text: "Generate attack tests first (use “Generate attack tests” above).",
+          type: "warning",
+        })
+        stopFuzzing()
+        return
+      }
+      addTerminalLog({ text: "Starting Foundry simulation...", type: "info" })
       try {
         const res = await fetch(`${agentUrl}/simulate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             source: originalCode,
+            testCode: generatedTestCode,
             contractName: contractFileName.replace(/\.sol$/i, "") || "Contract",
-            vulnerabilities,
           }),
           signal: controller.signal,
         })
@@ -90,7 +98,7 @@ export function useSimulation() {
     isFuzzing,
     originalCode,
     contractFileName,
-    vulnerabilities,
+    generatedTestCode,
     addTerminalLog,
     stopFuzzing,
   ])

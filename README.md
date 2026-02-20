@@ -121,6 +121,27 @@ This repository is structured as a monorepo:
 - `agent/`: Analyzer/orchestrator integrating static checks, simulations, and 0G
 - `contracts/`: Sample or test contracts used for validation and demos
 
+Installing Foundry (required for "Run in Foundry")
+--------------------------------------------------
+The agent runs `forge build` and `forge test` locally when you use **Run in Foundry**. You need Foundry installed on the same machine where the agent runs (and `git` in your PATH).
+
+**macOS / Linux:**
+
+```bash
+# Install the foundryup installer, then run it
+curl -L https://foundry.paradigm.xyz | bash
+
+# Restart your shell or source your profile (e.g. source ~/.bashrc), then:
+foundryup
+
+# Verify
+forge --version
+```
+
+**Windows:** Use WSL and follow the Linux steps, or see https://book.getfoundry.sh/getting-started/installation .
+
+After this, no API key or extra config is needed; the agent will call the `forge` and `git` binaries when you click **Run in Foundry**.
+
 Quickstart (indicative)
 -----------------------
 ```bash

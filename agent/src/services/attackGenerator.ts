@@ -1,7 +1,8 @@
 /**
  * Attack Generator: Uses 0G AI to generate Foundry invariant tests.
- * Phase 2: Prompt engineers the AI to write exploitative Foundry tests.
+ * Can use raw source only or analysis report (vulnerabilities + exploit_paths) for targeted malicious tests.
  */
+import type { ProphetReport } from '../types/report.js';
 import { call0GAI, is0GAvailable } from './0gService.js';
 
 const ATTACK_SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher. Your task is to analyze Solidity contracts and write Foundry invariant tests designed to break their core accounting logic.
@@ -13,6 +14,16 @@ You must return ONLY valid Solidity code for a Foundry test contract. The test s
 4. Be compilable and executable with \`forge test --invariant\`
 
 Return ONLY the Solidity code, no markdown, no explanations, no code fences. Start directly with "// SPDX-License-Identifier: MIT" or "pragma solidity".`;
+
+const TARGETED_ATTACK_SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher. You are given a security audit report with specific vulnerabilities and exploit paths. Your task is to write a Foundry test contract that attempts to exploit those findings.
+
+You must return ONLY valid Solidity code for a Foundry test. The test should:
+1. Target the reported vulnerabilities (e.g. reentrancy, overflow, access control)
+2. Implement or fuzz the described exploit paths where possible
+3. Use Foundry's Test.sol (testFuzz_, test_ or invariant_test) so it runs with \`forge test\` or \`forge test --invariant\`
+4. Import the target contract from "../src/<ContractName>.sol" so it compiles in a standard Foundry layout
+
+Return ONLY the Solidity code, no markdown, no code fences.`;
 
 /**
  * Generate a Foundry invariant test contract to attack the given Solidity code.
@@ -35,7 +46,6 @@ Write a Foundry test contract (e.g., Vault.t.sol) that:
 Return ONLY the Solidity test code, no markdown formatting.`;
 
   if (!is0GAvailable()) {
-    // Fallback mock for development
     return generateMockAttackTest(contractSource);
   }
 
@@ -44,8 +54,66 @@ Return ONLY the Solidity test code, no markdown formatting.`;
     return extractSolidityCode(testCode);
   } catch (e) {
     console.error('[AttackGenerator] Failed to generate attack:', e);
-    // Fallback to mock
     return generateMockAttackTest(contractSource);
+  }
+}
+
+/**
+ * Generate Foundry attack tests using the audit report so tests target specific vulnerabilities and exploit paths.
+ * This makes the generated tests "malicious" in the sense they try to break the contract along the reported vectors.
+ *
+ * @param contractSource - The Solidity contract source
+ * @param report - ProphetReport from analyze() (vulnerabilities, exploit_paths)
+ * @returns Foundry test contract source code
+ */
+export async function generateAttackFromReport(
+  contractSource: string,
+  report: ProphetReport
+): Promise<string> {
+  const vulnSummary =
+    report.vulnerabilities.length > 0
+      ? report.vulnerabilities
+          .map((v) => {
+            const locs = v.locations.map((l) => `${l.function} L${l.line_start}`).join(', ');
+            return `- [${v.severity}] ${v.title}${locs ? ` (${locs})` : ''}: ${v.explanation}`;
+          })
+          .join('\n')
+      : 'None listed.';
+  const exploitSummary =
+    report.exploit_paths.length > 0
+      ? report.exploit_paths
+          .map(
+            (ep) =>
+              `- ${ep.name}: ${ep.success_criteria}\n  Steps: ${ep.steps.map((s) => s.action).join(' -> ')}`
+          )
+          .join('\n')
+      : 'None listed.';
+
+  const prompt = `Target contract (analyzed):
+
+\`\`\`solidity
+${contractSource}
+\`\`\`
+
+Audit findings to target:
+Vulnerabilities:
+${vulnSummary}
+
+Exploit paths:
+${exploitSummary}
+
+Write a single Foundry test contract that tries to exploit these findings. Use the contract name "${report.contract_name}" and import from "../src/${report.contract_name}.sol". Return ONLY the Solidity test code.`;
+
+  if (!is0GAvailable()) {
+    return generateMockAttackTest(contractSource, report.contract_name);
+  }
+
+  try {
+    const testCode = await call0GAI(prompt, TARGETED_ATTACK_SYSTEM_PROMPT);
+    return extractSolidityCode(testCode);
+  } catch (e) {
+    console.error('[AttackGenerator] Failed to generate attack from report:', e);
+    return generateMockAttackTest(contractSource, report.contract_name);
   }
 }
 
@@ -76,11 +144,14 @@ function extractSolidityCode(response: string): string {
 /**
  * Generate a mock Foundry test for development (when 0G unavailable).
  */
-function generateMockAttackTest(contractSource: string): string {
-  // Extract contract name from source
-  const contractMatch = contractSource.match(/contract\s+(\w+)/);
-  const contractName = contractMatch ? contractMatch[1] : 'Target';
-  
+function generateMockAttackTest(
+  contractSource: string,
+  contractNameOverride?: string
+): string {
+  const contractName =
+    contractNameOverride ??
+    (contractSource.match(/contract\s+(\w+)/)?.[1] ?? 'Target');
+
   return `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
@@ -89,21 +160,18 @@ import "../src/${contractName}.sol";
 
 contract ${contractName}InvariantTest is Test {
     ${contractName} public target;
-    
+
     function setUp() public {
         target = new ${contractName}();
     }
-    
-    // Invariant: Total assets should equal total shares
-    // This is a placeholder - replace with actual invariants for your contract
-    function invariant_totalAssetsEqualsShares() public view {
-        // TODO: Implement invariant checks based on contract logic
-        // Example: assertEq(target.totalAssets(), target.totalShares());
+
+    // Invariant: placeholder - implement based on contract logic
+    function invariant_placeholder() public view {
+        // assertEq(target.totalAssets(), target.totalShares());
     }
-    
-    // Fuzzing test to break the invariant
+
     function testFuzz_breakInvariant(uint256 amount) public {
-        // TODO: Add fuzzing logic to attempt breaking the contract
+        // Fuzzing placeholder - add calls that stress the contract
     }
 }`;
 }

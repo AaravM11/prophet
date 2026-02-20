@@ -73,6 +73,9 @@ interface PipelineState {
   terminalLogs: TerminalLog[]
   isTerminalLive: boolean
 
+  // Generated Foundry test (from /generate-attack) for malicious testing
+  generatedTestCode: string | null
+
   // Actions
   setCode: (code: string, fileName?: string) => void
   setPatchedCode: (code: string) => void
@@ -93,6 +96,7 @@ interface PipelineState {
   setCurrentStep: (step: number) => void
   startFuzzing: () => void
   stopFuzzing: () => void
+  setGeneratedTestCode: (code: string | null) => void
 }
 
 export const usePipelineStore = create<PipelineState>((set) => ({
@@ -111,6 +115,7 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   summary: null,
   terminalLogs: [],
   isTerminalLive: false,
+  generatedTestCode: null,
 
   // Actions
   setCode: (code: string, fileName = "contract.sol") =>
@@ -167,4 +172,6 @@ export const usePipelineStore = create<PipelineState>((set) => ({
 
   stopFuzzing: () =>
     set({ isFuzzing: false, isTerminalLive: false }),
+
+  setGeneratedTestCode: (code) => set({ generatedTestCode: code }),
 }))

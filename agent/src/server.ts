@@ -1,14 +1,16 @@
 /**
  * HTTP server: expose analyzer to frontend.
- * POST /analyze { "source": "contract Solidity..." } -> ProphetReport
- * POST /generate-attack { "source": "contract..." } -> Foundry test code
+ * POST /analyze { "source": "..." } -> ProphetReport
+ * POST /generate-attack { "source": "...", "report"?: ProphetReport } -> { testCode }
+ * POST /simulate { "source": "...", "testCode": "...", "contractName"?: string } -> SSE stream
  * POST /generate-patch { "originalCode": "...", "crashTrace": "..." } -> Patched code
  */
 import http from 'node:http';
+import type { ProphetReport } from './types/report.js';
 import { analyze } from './analyzer.js';
-import { generateAttack } from './services/attackGenerator.js';
+import { generateAttack, generateAttackFromReport } from './services/attackGenerator.js';
 import { generatePatch } from './services/patchGenerator.js';
-import { get0GAccountBalance } from './services/0gService.js';
+import { runFoundryTests } from './services/simulationService.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -72,18 +74,82 @@ const server = http.createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) body += chunk;
     try {
-      const { source } = JSON.parse(body) as { source?: string };
+      const parsed = JSON.parse(body) as { source?: string; report?: ProphetReport };
+      const { source, report } = parsed;
       if (typeof source !== 'string') {
         res.writeHead(400);
         res.end(JSON.stringify({ error: 'Missing or invalid "source" string' }));
         return;
       }
-      const testCode = await generateAttack(source);
+      const testCode =
+        report && report.contract_name
+          ? await generateAttackFromReport(source, report)
+          : await generateAttack(source);
       res.writeHead(200);
       res.end(JSON.stringify({ testCode }));
     } catch (e) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: String(e) }));
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && path === '/simulate') {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    let streamStarted = false;
+    try {
+      const parsed = JSON.parse(body) as {
+        source?: string;
+        testCode?: string;
+        contractName?: string;
+      };
+      const { source, testCode, contractName } = parsed;
+      if (typeof source !== 'string' || typeof testCode !== 'string') {
+        res.writeHead(400);
+        res.end(
+          JSON.stringify({ error: 'Missing or invalid "source" or "testCode" string' })
+        );
+        return;
+      }
+      const name =
+        contractName && contractName.length > 0
+          ? contractName
+          : (source.match(/contract\s+(\w+)/)?.[1] ?? 'Contract');
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      streamStarted = true;
+      for await (const msg of runFoundryTests({
+        source,
+        testCode,
+        contractName: name,
+      })) {
+        try {
+          res.write(`data: ${JSON.stringify(msg)}\n`);
+        } catch (writeErr) {
+          // Client likely disconnected; stop streaming
+          break;
+        }
+      }
+    } catch (e) {
+      if (streamStarted) {
+        try {
+          res.write(`data: ${JSON.stringify({ chunk: `[prophet] Error: ${(e as Error).message}\n`, done: true })}\n`);
+        } catch {
+          // ignore
+        }
+      } else {
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: String(e) }));
+        return;
+      }
+    } finally {
+      if (streamStarted && !res.writableEnded) {
+        res.end();
+      }
     }
     return;
   }
@@ -125,6 +191,7 @@ server.listen(PORT, () => {
   console.log(`  GET  /health - Health check`);
   console.log(`  GET  /account - 0G balance (main + inference sub-accounts)`);
   console.log(`  POST /analyze - Analyze contract (returns ProphetReport)`);
-  console.log(`  POST /generate-attack - Generate Foundry invariant test`);
+  console.log(`  POST /generate-attack - Generate Foundry test (optional report for targeted attacks)`);
+  console.log(`  POST /simulate - Run Foundry tests, stream output`);
   console.log(`  POST /generate-patch - Generate patched contract from crash trace`);
 });
