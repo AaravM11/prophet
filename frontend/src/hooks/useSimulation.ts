@@ -12,7 +12,7 @@ export function useSimulation() {
     isFuzzing,
     originalCode,
     contractFileName,
-    generatedTestCode,
+    simulationCode,
     addTerminalLog,
     stopFuzzing,
   } = usePipelineStore()
@@ -30,9 +30,9 @@ export function useSimulation() {
     const controller = new AbortController()
 
     async function run() {
-      if (!generatedTestCode?.trim()) {
+      if (!simulationCode?.trim()) {
         addTerminalLog({
-          text: "Generate attack tests first (use “Generate attack tests” above).",
+          text: "No test code to run.",
           type: "warning",
         })
         stopFuzzing()
@@ -45,7 +45,7 @@ export function useSimulation() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             source: originalCode,
-            testCode: generatedTestCode,
+            testCode: simulationCode,
             contractName: contractFileName.replace(/\.sol$/i, "") || "Contract",
           }),
           signal: controller.signal,
@@ -98,7 +98,7 @@ export function useSimulation() {
     isFuzzing,
     originalCode,
     contractFileName,
-    generatedTestCode,
+    simulationCode,
     addTerminalLog,
     stopFuzzing,
   ])

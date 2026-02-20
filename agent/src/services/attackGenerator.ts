@@ -5,25 +5,53 @@
 import type { ProphetReport } from '../types/report.js';
 import { call0GAI, is0GAvailable } from './0gService.js';
 
-const ATTACK_SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher. Your task is to analyze Solidity contracts and write Foundry invariant tests designed to break their core accounting logic.
+const SINGLE_FILE_STRUCTURE = `Structure (all in ONE file, in this order):
 
-You must return ONLY valid Solidity code for a Foundry test contract. The test should:
-1. Define invariants that should always hold (e.g., "total assets == total shares")
-2. Use Foundry's invariant testing framework (invariant_test, invariant_include, etc.)
-3. Attempt to break the contract's accounting through fuzzing
-4. Be compilable and executable with \`forge test --invariant\`
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
 
-Return ONLY the Solidity code, no markdown, no explanations, no code fences. Start directly with "// SPDX-License-Identifier: MIT" or "pragma solidity".`;
+import "forge-std/Test.sol";
 
-const TARGETED_ATTACK_SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher. You are given a security audit report with specific vulnerabilities and exploit paths. Your task is to write a Foundry test contract that attempts to exploit those findings.
+/* ============================================================
+                        TARGET CONTRACT
+   ============================================================ */
 
-You must return ONLY valid Solidity code for a Foundry test. The test should:
-1. Target the reported vulnerabilities (e.g. reentrancy, overflow, access control)
-2. Implement or fuzz the described exploit paths where possible
-3. Use Foundry's Test.sol (testFuzz_, test_ or invariant_test) so it runs with \`forge test\` or \`forge test --invariant\`
-4. Import the target contract from "../src/<ContractName>.sol" so it compiles in a standard Foundry layout
+import "../src/<ContractName>.sol";
 
-Return ONLY the Solidity code, no markdown, no code fences.`;
+/* ============================================================
+                     ATTACKER / HELPER CONTRACTS
+   ============================================================ */
+
+// Interfaces, ReentrantAttacker-style contracts, etc.
+
+/* ============================================================
+                          TEST SUITE
+   ============================================================ */
+
+contract <ContractName>Test is Test {
+    // setUp(), test*() functions using vm.prank, vm.deal, assertEq, etc.
+}`;
+
+const ATTACK_SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher. Your task is to analyze Solidity contracts and write Foundry tests designed to break their core logic.
+
+You must return ONLY valid Solidity code in a SINGLE file. Use this exact structure:
+${SINGLE_FILE_STRUCTURE}
+
+Rules:
+1. Put the target contract import under "TARGET CONTRACT", attacker/helper contracts (interfaces, reentrancy attackers, etc.) under "ATTACKER / HELPER CONTRACTS", and the test contract under "TEST SUITE".
+2. Use Foundry's Test.sol: vm.prank, vm.deal, assertEq, assertTrue, assertLt, etc.
+3. No markdown, no code fences, no explanations. Start with "// SPDX-License-Identifier: MIT".`;
+
+const TARGETED_ATTACK_SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher. You are given a security audit report with specific vulnerabilities and exploit paths. Your task is to write a Foundry test file that attempts to exploit those findings.
+
+You must return ONLY valid Solidity code in a SINGLE file. Use this exact structure:
+${SINGLE_FILE_STRUCTURE}
+
+Rules:
+1. Replace <ContractName> with the actual contract name from the report.
+2. Put the target import under "TARGET CONTRACT", any attacker/helper contracts (e.g. ReentrantAttacker, interfaces) under "ATTACKER / HELPER CONTRACTS", and the main test contract (extending Test) under "TEST SUITE".
+3. Target the reported vulnerabilities; use vm.prank, vm.deal, assertEq, assertTrue, assertLt as needed.
+4. No markdown, no code fences. Start with "// SPDX-License-Identifier: MIT".`;
 
 /**
  * Generate a Foundry invariant test contract to attack the given Solidity code.
@@ -31,19 +59,19 @@ Return ONLY the Solidity code, no markdown, no code fences.`;
  * @returns Foundry test contract source code
  */
 export async function generateAttack(contractSource: string): Promise<string> {
-  const prompt = `Analyze this Solidity contract and write a complete Foundry Invariant Test designed to break its core accounting logic:
+  const prompt = `Analyze this Solidity contract and write a complete Foundry test file designed to break its core logic:
 
 \`\`\`solidity
 ${contractSource}
 \`\`\`
 
-Write a Foundry test contract (e.g., Vault.t.sol) that:
-- Defines invariants that should hold
-- Uses Foundry's invariant testing framework
-- Attempts to break the contract through fuzzing
-- Is ready to compile and run with \`forge test --invariant\`
+Output a SINGLE Solidity file with:
+1. SPDX + pragma ^0.8.20 and import "forge-std/Test.sol"
+2. A "TARGET CONTRACT" section with import "../src/<ContractName>.sol"
+3. An "ATTACKER / HELPER CONTRACTS" section (interfaces, attacker contracts like reentrancy helpers)
+4. A "TEST SUITE" section: one contract <ContractName>Test is Test { setUp(); test*(); }
 
-Return ONLY the Solidity test code, no markdown formatting.`;
+Use the exact comment headers shown in the system prompt. Return ONLY the Solidity code, no markdown.`;
 
   if (!is0GAvailable()) {
     return generateMockAttackTest(contractSource);
@@ -102,7 +130,15 @@ ${vulnSummary}
 Exploit paths:
 ${exploitSummary}
 
-Write a single Foundry test contract that tries to exploit these findings. Use the contract name "${report.contract_name}" and import from "../src/${report.contract_name}.sol". Return ONLY the Solidity test code.`;
+Write ONE Solidity file that exploits these findings. Use contract name "${report.contract_name}" and import from "../src/${report.contract_name}.sol".
+
+Structure (required):
+1. SPDX + pragma ^0.8.20 + import "forge-std/Test.sol"
+2. Section "TARGET CONTRACT" with: import "../src/${report.contract_name}.sol";
+3. Section "ATTACKER / HELPER CONTRACTS" with interfaces and attacker contracts (e.g. ReentrantAttacker)
+4. Section "TEST SUITE" with: contract ${report.contract_name}Test is Test { setUp(); test*(); }
+
+Use the exact comment block headers (e.g. /* ===== TARGET CONTRACT ===== */). Return ONLY the Solidity code, no markdown.`;
 
   if (!is0GAvailable()) {
     return generateMockAttackTest(contractSource, report.contract_name);
@@ -143,6 +179,7 @@ function extractSolidityCode(response: string): string {
 
 /**
  * Generate a mock Foundry test for development (when 0G unavailable).
+ * Uses the same single-file structure: target, attacker/helpers, test suite.
  */
 function generateMockAttackTest(
   contractSource: string,
@@ -153,25 +190,35 @@ function generateMockAttackTest(
     (contractSource.match(/contract\s+(\w+)/)?.[1] ?? 'Target');
 
   return `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
+
+/* ============================================================
+                        TARGET CONTRACT
+   ============================================================ */
+
 import "../src/${contractName}.sol";
 
-contract ${contractName}InvariantTest is Test {
+/* ============================================================
+                     ATTACKER / HELPER CONTRACTS
+   ============================================================ */
+
+// Add interfaces and attacker contracts here when targeting specific vulns
+
+/* ============================================================
+                          TEST SUITE
+   ============================================================ */
+
+contract ${contractName}Test is Test {
     ${contractName} public target;
 
     function setUp() public {
         target = new ${contractName}();
     }
 
-    // Invariant: placeholder - implement based on contract logic
-    function invariant_placeholder() public view {
-        // assertEq(target.totalAssets(), target.totalShares());
-    }
-
-    function testFuzz_breakInvariant(uint256 amount) public {
-        // Fuzzing placeholder - add calls that stress the contract
+    function testPlaceholder() public view {
+        assertEq(address(target) != address(0), true);
     }
 }`;
 }

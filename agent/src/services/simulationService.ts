@@ -22,6 +22,7 @@ out = "out"
 libs = ["lib"]
 solc = "0.8.28"
 evm_version = "cancun"
+remappings = ["forge-std/=lib/forge-std/src/"]
 
 [fmt]
 line_length = 100
@@ -96,6 +97,39 @@ async function* runCommand(
  * Write contract and test to a temp Foundry project and run forge build && forge test.
  * Yields each line of stdout/stderr for streaming to the client.
  */
+/** Extract contract filename from test's first "../src/X.sol" import so we write source where the test expects it. */
+function getContractFileFromTestImport(testCode: string): string | null {
+  const match = testCode.match(/["']\.\.\/src\/([^"']+\.sol)["']/);
+  return match ? match[1] : null;
+}
+
+/** If test uses Foundry's Test base but doesn't import it, prepend the forge-std import so it compiles. */
+function ensureForgeStdTestImport(testCode: string): string {
+  const usesTest = /\b(is|:)\s+Test\b/.test(testCode);
+  const hasImport = /import\s+["']forge-std\/Test\.sol["']/.test(testCode);
+  if (!usesTest || hasImport) return testCode;
+  const hasPragma = /pragma\s+solidity/.test(testCode);
+  const insert = hasPragma
+    ? 'import "forge-std/Test.sol";\n'
+    : '// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\nimport "forge-std/Test.sol";\n';
+  return insert + testCode;
+}
+
+/** If the first contract is missing a closing brace before the second contract, insert it (fixes "declaration expected" at contract #2). */
+function ensureClosingBraceBeforeSecondContract(code: string): string {
+  const secondContractRegex = /\n\s*\bcontract\s+\w+/g;
+  const first = secondContractRegex.exec(code);
+  const second = secondContractRegex.exec(code);
+  if (!first || !second) return code;
+  const idx = second.index;
+  const before = code.slice(0, idx);
+  const open = (before.match(/{/g) ?? []).length;
+  const close = (before.match(/}/g) ?? []).length;
+  if (open <= close) return code;
+  const missing = open - close;
+  return code.slice(0, idx) + '}\n'.repeat(missing) + code.slice(idx);
+}
+
 export async function* runFoundryTests(
   options: SimulateOptions
 ): AsyncGenerator<StreamChunk, void, undefined> {
@@ -112,8 +146,11 @@ export async function* runFoundryTests(
     fs.mkdirSync(testDir, { recursive: true });
 
     fs.writeFileSync(path.join(tmpDir, 'foundry.toml'), FOUNDRY_TOML);
-    fs.writeFileSync(path.join(srcDir, `${contractName}.sol`), source);
-    fs.writeFileSync(path.join(testDir, `${contractName}.t.sol`), testCode);
+    const contractFile = getContractFileFromTestImport(testCode) ?? `${contractName}.sol`;
+    fs.writeFileSync(path.join(srcDir, contractFile), source);
+    let normalizedTest = ensureForgeStdTestImport(testCode);
+    normalizedTest = ensureClosingBraceBeforeSecondContract(normalizedTest);
+    fs.writeFileSync(path.join(testDir, `${contractName}.t.sol`), normalizedTest);
 
     yield { chunk: `[prophet] Temp project: ${tmpDir}\n` };
     yield { chunk: `[prophet] Installing forge-std...\n` };
@@ -122,7 +159,7 @@ export async function* runFoundryTests(
       yield msg;
     }
     const forgeCmd = getForgeCommand();
-    for await (const msg of runCommand(forgeCmd, ['install', 'foundry-rs/forge-std'], tmpDir)) {
+    for await (const msg of runCommand(forgeCmd, ['install', 'foundry-rs/forge-std@v1.12.0', '--no-git'], tmpDir)) {
       yield msg;
       if (msg.done && msg.exitCode !== 0) {
         yield {

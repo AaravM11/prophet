@@ -195,6 +195,7 @@ contract Example {
         risk_score: number
         risk_level: "critical" | "high" | "medium" | "low"
         summary: string
+        contract_name?: string
         vulnerabilities?: Array<{
           id?: string
           title?: string
@@ -253,6 +254,7 @@ contract Example {
         riskScore,
         riskLevel: report.risk_level ?? "low",
         summary: report.summary ?? "Analysis complete.",
+        analyzedContractName: report.contract_name ?? null,
       })
     } catch (err) {
       stopAnalysis()

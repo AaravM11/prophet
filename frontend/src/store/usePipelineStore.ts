@@ -75,6 +75,12 @@ interface PipelineState {
 
   // Generated Foundry test (from /generate-attack) for malicious testing
   generatedTestCode: string | null
+  // Optional manual test (pasted)
+  manualTestCode: string | null
+  // Code to run for the current simulation (set when Run manual / Run generated is clicked)
+  simulationCode: string | null
+  // Contract name parsed from source by analyzer (used for generate-attack so tests match the real contract)
+  analyzedContractName: string | null
 
   // Actions
   setCode: (code: string, fileName?: string) => void
@@ -88,15 +94,17 @@ interface PipelineState {
     riskScore: number
     riskLevel: "critical" | "high" | "medium" | "low"
     summary: string
+    analyzedContractName?: string | null
   }) => void
   addTerminalLog: (log: Omit<TerminalLog, "timestamp">) => void
   clearTerminalLogs: () => void
   setTerminalLive: (live: boolean) => void
   applyPatch: () => void
   setCurrentStep: (step: number) => void
-  startFuzzing: () => void
+  startFuzzing: (testCode: string) => void
   stopFuzzing: () => void
   setGeneratedTestCode: (code: string | null) => void
+  setManualTestCode: (code: string | null) => void
 }
 
 export const usePipelineStore = create<PipelineState>((set) => ({
@@ -116,6 +124,9 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   terminalLogs: [],
   isTerminalLive: false,
   generatedTestCode: null,
+  manualTestCode: null,
+  simulationCode: null,
+  analyzedContractName: null,
 
   // Actions
   setCode: (code: string, fileName = "contract.sol") =>
@@ -137,6 +148,7 @@ export const usePipelineStore = create<PipelineState>((set) => ({
       riskScore: data.riskScore,
       riskLevel: data.riskLevel,
       summary: data.summary,
+      analyzedContractName: data.analyzedContractName ?? null,
       isScanning: false,
       currentStep: data.vulnerabilities.length > 0 ? 3 : 4,
     }),
@@ -167,11 +179,12 @@ export const usePipelineStore = create<PipelineState>((set) => ({
 
   setCurrentStep: (step) => set({ currentStep: step }),
 
-  startFuzzing: () =>
-    set({ isFuzzing: true, currentStep: 3, isTerminalLive: true }),
+  startFuzzing: (testCode) =>
+    set({ isFuzzing: true, currentStep: 3, isTerminalLive: true, simulationCode: testCode?.trim() || null }),
 
   stopFuzzing: () =>
-    set({ isFuzzing: false, isTerminalLive: false }),
+    set({ isFuzzing: false, isTerminalLive: false, simulationCode: null }),
 
   setGeneratedTestCode: (code) => set({ generatedTestCode: code }),
+  setManualTestCode: (code) => set({ manualTestCode: code }),
 }))
