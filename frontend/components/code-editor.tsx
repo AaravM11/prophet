@@ -64,6 +64,7 @@ export function CodeEditor() {
   const [localCode, setLocalCode] = useState("")
   const [cursorPosition, setCursorPosition] = useState({ line: 1, col: 1 })
   const [showValidationError, setShowValidationError] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
 
   const {
     originalCode,
@@ -72,6 +73,8 @@ export function CodeEditor() {
     isScanning,
     setCode,
     startAnalysis,
+    stopAnalysis,
+    updateReport,
   } = usePipelineStore()
 
   // Initialize with store code or default
@@ -165,7 +168,7 @@ contract Example {
     reader.readAsText(file)
   }
 
-  // Handle run analysis
+  // Handle run analysis — call agent POST /analyze and push result into store
   const handleRunAnalysis = async () => {
     const validation = validateSolidity(localCode)
     if (!validation.valid) {
@@ -177,8 +180,75 @@ contract Example {
     setCode(localCode, contractFileName)
     startAnalysis()
 
-    // TODO: In Phase 2, this will call the API
-    // For now, just update the step
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    try {
+      const res = await fetch(`${agentUrl}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: localCode }),
+      })
+      if (!res.ok) {
+        const errText = await res.text()
+        throw new Error(errText || `Analysis failed: ${res.status}`)
+      }
+      const report = await res.json() as {
+        risk_score: number
+        risk_level: "critical" | "high" | "medium" | "low"
+        summary: string
+        vulnerabilities?: Array<{
+          id?: string
+          title?: string
+          type?: string
+          description?: string
+          explanation?: string
+          severity?: "critical" | "high" | "medium" | "low"
+          confidence?: number
+          locations?: Array<{ file: string; function: string; line_start: number; line_end: number }>
+        }>
+        exploit_paths?: Array<{ name: string; steps: unknown[]; success_criteria: string }>
+        fix_suggestions?: Array<{ id?: string; title: string; strategy: string; explanation: string; diff_preview?: string; tradeoffs?: string }>
+      }
+
+      const riskScore = report.risk_score <= 1 ? report.risk_score * 100 : report.risk_score
+      const vulnerabilities = (report.vulnerabilities ?? []).map((v, i) => ({
+        id: v.id ?? v.type ?? `vuln-${i}`,
+        title: v.title ?? v.type ?? "Finding",
+        severity: v.severity ?? "medium",
+        confidence: typeof v.confidence === "number" ? v.confidence : 0.8,
+        locations: v.locations ?? [],
+        explanation: v.explanation ?? v.description ?? "",
+        evidence: undefined,
+        references: undefined,
+      }))
+      const exploitPaths = (report.exploit_paths ?? []).map((p) => ({
+        name: p.name ?? "Attack path",
+        steps: Array.isArray(p.steps) ? p.steps : [],
+        success_criteria: p.success_criteria ?? "",
+      }))
+      const fixSuggestions = (report.fix_suggestions ?? []).map((f, i) => ({
+        id: f.id ?? `fix-${i}`,
+        title: f.title ?? "Fix",
+        strategy: f.strategy ?? "",
+        explanation: f.explanation ?? "",
+        diff_preview: f.diff_preview,
+        tradeoffs: f.tradeoffs,
+      }))
+
+      updateReport({
+        vulnerabilities,
+        exploitPaths,
+        fixSuggestions,
+        riskScore,
+        riskLevel: report.risk_level ?? "low",
+        summary: report.summary ?? "Analysis complete.",
+      })
+    } catch (err) {
+      stopAnalysis()
+      const message = err instanceof Error ? err.message : String(err)
+      setAnalysisError(message)
+      setTimeout(() => setAnalysisError(null), 8000)
+      console.error("[CodeEditor] Analysis failed:", message)
+    }
   }
 
   // Get vulnerable lines from store
@@ -317,6 +387,11 @@ contract Example {
         <div className="flex items-center gap-3">
           {showValidationError && (
             <span className="text-neon-red">Please check your Solidity code</span>
+          )}
+          {analysisError && (
+            <span className="max-w-[280px] truncate text-neon-red" title={analysisError}>
+              Analysis failed: {analysisError}
+            </span>
           )}
           {vulnerabilities.length > 0 && (
             <span className="flex items-center gap-1">

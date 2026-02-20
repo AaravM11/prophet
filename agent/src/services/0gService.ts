@@ -59,6 +59,44 @@ async function initBroker(): Promise<BrokerType | null> {
   return broker;
 }
 
+const ONE_OG = BigInt(1e18);
+
+/**
+ * Get 0G account balance (main ledger + inference sub-accounts). Returns null if 0G unavailable.
+ */
+export async function get0GAccountBalance(): Promise<{
+  main: { total_0g: number; available_0g: number };
+  inference: Array<{ provider: string; balance_0g: number; pending_refund_0g: number }>;
+} | null> {
+  const brokerInstance = await initBroker();
+  if (!brokerInstance?.ledger) return null;
+
+  try {
+    const ledger = await brokerInstance.ledger.getLedger();
+    const total = Number(ledger.totalBalance ?? 0n) / Number(ONE_OG);
+    const available = Number(ledger.availableBalance ?? 0n) / Number(ONE_OG);
+
+    let inference: Array<{ provider: string; balance_0g: number; pending_refund_0g: number }> = [];
+    const innerLedger = (brokerInstance.ledger as { ledger?: { getLedgerWithDetail(): Promise<{ ledgerInfo: bigint[]; infers: [string, bigint, bigint][] }> } }).ledger;
+    if (innerLedger?.getLedgerWithDetail) {
+      const detail = await innerLedger.getLedgerWithDetail();
+      inference = (detail.infers ?? []).map(([provider, balance, pendingRefund]) => ({
+        provider,
+        balance_0g: Number(balance ?? 0n) / Number(ONE_OG),
+        pending_refund_0g: Number(pendingRefund ?? 0n) / Number(ONE_OG),
+      }));
+    }
+
+    return {
+      main: { total_0g: total, available_0g: available },
+      inference,
+    };
+  } catch (e) {
+    console.error('[0G] get0GAccountBalance failed:', e);
+    return null;
+  }
+}
+
 /**
  * Call 0G AI with a prompt. Falls back to local mock if 0G unavailable.
  */

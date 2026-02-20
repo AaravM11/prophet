@@ -8,6 +8,7 @@ import http from 'node:http';
 import { analyze } from './analyzer.js';
 import { generateAttack } from './services/attackGenerator.js';
 import { generatePatch } from './services/patchGenerator.js';
+import { get0GAccountBalance } from './services/0gService.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -27,6 +28,23 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && path === '/health') {
     res.writeHead(200);
     res.end(JSON.stringify({ status: 'ok', service: 'prophet-agent' }));
+    return;
+  }
+
+  if (req.method === 'GET' && path === '/account') {
+    try {
+      const balance = await get0GAccountBalance();
+      if (balance === null) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: '0G not configured or unavailable. Set PRIVATE_KEY_DEPLOYER and ensure broker is initialized.' }));
+        return;
+      }
+      res.writeHead(200);
+      res.end(JSON.stringify(balance));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String(e) }));
+    }
     return;
   }
 
@@ -105,6 +123,7 @@ server.listen(PORT, () => {
   console.log(`[agent] Prophet analyzer listening on http://localhost:${PORT}`);
   console.log(`[agent] Endpoints:`);
   console.log(`  GET  /health - Health check`);
+  console.log(`  GET  /account - 0G balance (main + inference sub-accounts)`);
   console.log(`  POST /analyze - Analyze contract (returns ProphetReport)`);
   console.log(`  POST /generate-attack - Generate Foundry invariant test`);
   console.log(`  POST /generate-patch - Generate patched contract from crash trace`);
