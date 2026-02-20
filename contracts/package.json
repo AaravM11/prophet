@@ -1,0 +1,11 @@
+{
+  "name": "@prophet/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Contracts dev - to be implemented'",
+    "build": "echo 'Contracts build - to be implemented'",
+    "test": "echo 'Contracts tests - to be implemented'",
+    "lint": "echo 'Contracts lint - to be implemented'"
+  }
+}

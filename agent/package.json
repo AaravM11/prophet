@@ -1,0 +1,11 @@
+{
+  "name": "@prophet/agent",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Agent dev server - to be implemented'",
+    "build": "echo 'Agent build - to be implemented'",
+    "test": "echo 'Agent tests - to be implemented'",
+    "lint": "echo 'Agent lint - to be implemented'"
+  }
+}

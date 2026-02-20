@@ -1,0 +1,11 @@
+{
+  "name": "@prophet/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Frontend dev server - to be implemented'",
+    "build": "echo 'Frontend build - to be implemented'",
+    "test": "echo 'Frontend tests - to be implemented'",
+    "lint": "echo 'Frontend lint - to be implemented'"
+  }
+}

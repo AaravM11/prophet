@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+out
+.turbo
+cache
+broadcast
+*.log
+.DS_Store
