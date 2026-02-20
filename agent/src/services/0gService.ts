@@ -124,26 +124,10 @@ export async function call0GAI(prompt: string, systemPrompt?: string): Promise<s
     // Extract provider address from service (structure may vary)
     const providerAddress = (llmService as any).providerAddress || (llmService as any).provider || (llmService as any)[0];
 
-    // Ensure funds are in the provider sub-account (required before acknowledge).
-    // Testnet provider minimum is 1 OG; main account balance alone is not enough.
-    const minTransferWei = BigInt(1e18); // 1 OG
-    try {
-      await brokerInstance.ledger.transferFund(providerAddress, 'inference', minTransferWei);
-    } catch (transferErr: any) {
-      const msg = transferErr?.shortMessage || String(transferErr);
-      if (msg.includes('InsufficientAvailableBalance') || msg.includes('insufficient')) {
-        throw new Error(
-          '0G: Not enough balance in provider sub-account. You need at least 1 OG transferred to the inference provider. ' +
-          'Run: 0g-compute-cli transfer-fund --provider <ADDRESS> --amount 1 --service inference ' +
-          '(get <ADDRESS> from 0g-compute-cli inference list-providers). Or get more testnet OG from https://faucet.0g.ai and deposit, then transfer.'
-        );
-      }
-      throw transferErr;
-    }
-
-    // Acknowledge provider
+    // Acknowledge provider. SDK creates sub-account (transfer 1 OG from main) only if none exists.
+    // If you already transferred via CLI, no transfer is needed and this just succeeds.
     await brokerInstance.inference.acknowledgeProviderSigner(providerAddress);
-    
+
     // Get service metadata and request headers
     const { endpoint, model } = await brokerInstance.inference.getServiceMetadata(providerAddress);
     const headers = await brokerInstance.inference.getRequestHeaders(providerAddress);
