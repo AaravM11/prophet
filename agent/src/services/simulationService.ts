@@ -586,7 +586,9 @@ function patchRemappings(tmpDir: string): void {
 }
 
 async function* runLocalFoundry(
-  tmpDir: string
+  tmpDir: string,
+  source: string,
+  contractName: string
 ): AsyncGenerator<StreamChunk, void, undefined> {
   yield { chunk: `[prophet] Running locally (no Docker sandbox)...\n` };
 
@@ -619,20 +621,80 @@ async function* runLocalFoundry(
 
   patchRemappings(tmpDir);
 
-  yield { chunk: `[prophet] Running forge build...\n` };
-  for await (const msg of runCommand(forgeCmd, ['build'], tmpDir, TIMEOUT_MS)) {
-    yield msg;
-    if (msg.done && msg.exitCode !== 0) {
-      yield {
-        chunk: `[prophet] forge build failed (exit ${msg.exitCode})\n`,
-        done: true,
-        exitCode: msg.exitCode,
-      };
+  for (let attempt = 0; attempt <= MAX_FIX_ATTEMPTS; attempt++) {
+    yield { chunk: `[prophet] Running forge build...\n` };
+    const buildResult = await collectOutput(forgeCmd, ['build'], tmpDir, TIMEOUT_MS);
+
+    if (buildResult.exitCode === 0) {
+      yield { chunk: `[prophet] Build OK, running tests...\n` };
+      for await (const msg of runCommand(forgeCmd, ['test', '-vvv'], tmpDir, TIMEOUT_MS)) {
+        yield msg;
+      }
       return;
     }
+
+    if (attempt < MAX_FIX_ATTEMPTS) {
+      yield { chunk: `[prophet] Build failed (attempt ${attempt + 1}/${MAX_FIX_ATTEMPTS + 1}), asking AI to fix...\n` };
+
+      const testFile = fs.readdirSync(path.join(tmpDir, 'test')).find((f) => f.endsWith('.sol'));
+      if (!testFile) break;
+      const testPath = path.join(tmpDir, 'test', testFile);
+      const currentTest = fs.readFileSync(testPath, 'utf-8');
+
+      const fixedTest = await aiFixTestCode(currentTest, buildResult.output, source);
+      if (!fixedTest) {
+        yield { chunk: `[prophet] AI fix unavailable, showing original errors.\n` };
+        break;
+      }
+
+      let processed = fixedTest.replace(
+        /import\s+["']\.\.\/src\/[^"']+\.sol["']\s*;\s*\n?/g, ''
+      );
+      const srcContracts = new Set(
+        [...source.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1])
+      );
+      const fixedContracts = new Set(
+        [...processed.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1])
+      );
+      const cFile = resolveSourceFilename(source, '', contractName);
+      if (![...srcContracts].some((c) => fixedContracts.has(c))) {
+        const pe = processed.indexOf(';');
+        if (pe !== -1) {
+          processed = processed.slice(0, pe + 1) +
+            `\nimport "../src/${cFile}";\n` +
+            processed.slice(pe + 1);
+        }
+      }
+      processed = fixCommonSolidityIssues(processed);
+      processed = ensureForgeStdTestImport(processed);
+      processed = balanceBraces(processed);
+      fs.writeFileSync(testPath, processed);
+
+      const srcDir = path.join(tmpDir, 'src');
+      const primaryBase = cFile.replace(/\.sol$/, '');
+      for (const name of allDefinedNames(source)) {
+        if (name === primaryBase) continue;
+        const fwdPath = path.join(srcDir, `${name}.sol`);
+        if (!fs.existsSync(fwdPath)) {
+          fs.writeFileSync(
+            fwdPath,
+            `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\nimport "./${cFile}";\n`
+          );
+        }
+      }
+
+      console.log(`[runLocalFoundry] rewrote test after AI fix (attempt ${attempt + 1})`);
+      continue;
+    }
+
+    yield { chunk: buildResult.output };
+    yield { chunk: '\n', done: true, exitCode: buildResult.exitCode };
+    return;
   }
 
-  yield { chunk: `[prophet] Running forge test...\n` };
+  for await (const msg of runCommand(forgeCmd, ['build'], tmpDir, TIMEOUT_MS)) {
+    yield msg;
+  }
   for await (const msg of runCommand(forgeCmd, ['test', '-vvv'], tmpDir, TIMEOUT_MS)) {
     yield msg;
   }
@@ -658,7 +720,7 @@ export async function* runFoundryTests(
     if (useDockerSandbox()) {
       yield* runDockerFoundry(tmpDir, source, contractName);
     } else {
-      yield* runLocalFoundry(tmpDir);
+      yield* runLocalFoundry(tmpDir, source, contractName);
     }
   } finally {
     try {
