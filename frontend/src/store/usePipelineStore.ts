@@ -84,6 +84,8 @@ interface PipelineState {
 
   // UI: show AI fixes panel (inline, no route)
   showFixesView: boolean
+  // Last analysis was run with premium (fine-tuned / extra compute) tier
+  analyzedWithPremium: boolean
 
   // Actions
   setCode: (code: string, fileName?: string) => void
@@ -98,6 +100,7 @@ interface PipelineState {
     riskLevel: "critical" | "high" | "medium" | "low"
     summary: string
     analyzedContractName?: string | null
+    analyzedWithPremium?: boolean
   }) => void
   addTerminalLog: (log: Omit<TerminalLog, "timestamp">) => void
   clearTerminalLogs: () => void
@@ -132,6 +135,7 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   simulationCode: null,
   analyzedContractName: null,
   showFixesView: false,
+  analyzedWithPremium: false,
 
   // Actions
   setCode: (code: string, fileName = "contract.sol") =>
@@ -154,6 +158,7 @@ export const usePipelineStore = create<PipelineState>((set) => ({
       riskLevel: data.riskLevel,
       summary: data.summary,
       analyzedContractName: data.analyzedContractName ?? null,
+      analyzedWithPremium: data.analyzedWithPremium ?? false,
       isScanning: false,
       currentStep: data.vulnerabilities.length > 0 ? 3 : 4,
     }),

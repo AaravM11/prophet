@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState, useEffect, useMemo } from "react"
+import { useAccount, useSendTransaction } from "wagmi"
 import {
   FileCode2,
   AlertTriangle,
@@ -9,9 +10,21 @@ import {
   Copy,
   Check,
   X,
+  Sparkles,
+  Wallet,
+  Loader2,
 } from "lucide-react"
 import { usePipelineStore, type ExploitStep } from "@/src/store/usePipelineStore"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 // ---------------------------------------------------------------------------
 // Diff algorithm
@@ -196,6 +209,11 @@ export function CodeEditor() {
   const [cursorPosition, setCursorPosition] = useState({ line: 1, col: 1 })
   const [showValidationError, setShowValidationError] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [usePremiumAnalysis, setUsePremiumAnalysis] = useState(false)
+  const [showPremiumPayDialog, setShowPremiumPayDialog] = useState(false)
+  const [isPremiumSigning, setIsPremiumSigning] = useState(false)
+  const { address } = useAccount()
+  const { sendTransactionAsync } = useSendTransaction()
 
   const {
     originalCode,
@@ -286,23 +304,14 @@ contract Example {
     reader.readAsText(file)
   }
 
-  const handleRunAnalysis = async () => {
-    const validation = validateSolidity(localCode)
-    if (!validation.valid) {
-      setShowValidationError(true)
-      setTimeout(() => setShowValidationError(false), 3000)
-      return
-    }
-
-    setCode(localCode, contractFileName)
+  const runAnalysisRequest = async () => {
     startAnalysis()
-
     const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
     try {
       const res = await fetch(`${agentUrl}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: localCode }),
+        body: JSON.stringify({ source: localCode, premium: usePremiumAnalysis }),
       })
       if (!res.ok) {
         const errText = await res.text()
@@ -313,6 +322,7 @@ contract Example {
         risk_level: "critical" | "high" | "medium" | "low"
         summary: string
         contract_name?: string
+        meta?: { tier?: "standard" | "premium" }
         vulnerabilities?: Array<{
           id?: string; title?: string; type?: string; description?: string; explanation?: string
           severity?: "critical" | "high" | "medium" | "low"; confidence?: number
@@ -363,12 +373,49 @@ contract Example {
         riskLevel: report.risk_level ?? "low",
         summary: report.summary ?? "Analysis complete.",
         analyzedContractName: report.contract_name ?? null,
+        analyzedWithPremium: report.meta?.tier === "premium",
       })
     } catch (err) {
       stopAnalysis()
       const message = err instanceof Error ? err.message : String(err)
       setAnalysisError(message)
       setTimeout(() => setAnalysisError(null), 8000)
+    }
+  }
+
+  const handleRunAnalysis = async () => {
+    const validation = validateSolidity(localCode)
+    if (!validation.valid) {
+      setShowValidationError(true)
+      setTimeout(() => setShowValidationError(false), 3000)
+      return
+    }
+
+    setCode(localCode, contractFileName)
+
+    if (usePremiumAnalysis) {
+      setShowPremiumPayDialog(true)
+      return
+    }
+
+    runAnalysisRequest()
+  }
+
+  const handlePremiumPay = async () => {
+    if (!address) return
+    setIsPremiumSigning(true)
+    try {
+      // 0-value self-transfer: MetaMask shows "Value: 0 ETH" + gas estimate. User pays gas only.
+      await sendTransactionAsync({
+        to: address,
+        value: BigInt(0),
+      })
+      setShowPremiumPayDialog(false)
+      runAnalysisRequest()
+    } catch {
+      // User rejected tx or wallet error — leave dialog open
+    } finally {
+      setIsPremiumSigning(false)
     }
   }
 
@@ -394,7 +441,56 @@ contract Example {
   const isDiffMode = showFixesView && hasPatch
 
   return (
-    <section
+    <>
+      <Dialog open={showPremiumPayDialog} onOpenChange={setShowPremiumPayDialog}>
+        <DialogContent className="sm:max-w-md" showCloseButton={true}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="size-5 text-amber-400" />
+              Premium analysis
+            </DialogTitle>
+            <DialogDescription>
+              Confirm the transaction in your wallet to run premium analysis.
+            </DialogDescription>
+          </DialogHeader>
+          {address && (
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 font-mono text-xs text-muted-foreground">
+              <Wallet className="size-4 shrink-0 text-amber-400" />
+              <span className="truncate" title={address}>
+                {address.slice(0, 6)}…{address.slice(-4)}
+              </span>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowPremiumPayDialog(false)}
+              disabled={isPremiumSigning}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handlePremiumPay}
+              disabled={!address || isPremiumSigning}
+              className="bg-amber-500/20 text-amber-400 border-amber-500/40 hover:bg-amber-500/30"
+            >
+              {isPremiumSigning ? (
+                <>
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                  Confirm in MetaMask…
+                </>
+              ) : (
+                <>
+                  <Wallet className="size-4 mr-2" />
+                  Pay with wallet
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <section
       className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-[#0d0d0d]"
       aria-label="Smart contract code editor"
     >
@@ -467,6 +563,20 @@ contract Example {
               <Button variant="ghost" size="sm" onClick={handleCopy} className="h-7 text-xs">
                 <Copy className="size-3 mr-1" /> Copy
               </Button>
+              <button
+                type="button"
+                onClick={() => setUsePremiumAnalysis((p) => !p)}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
+                  usePremiumAnalysis
+                    ? "border-amber-500/40 bg-amber-500/15 text-amber-400"
+                    : "border-border bg-surface text-muted-foreground hover:bg-elevated hover:text-foreground"
+                )}
+                title="Premium: extra compute & fine-tuned analysis (free for now)"
+              >
+                <Sparkles className="size-3" />
+                Premium
+              </button>
               <Button
                 size="sm"
                 onClick={handleRunAnalysis}
@@ -576,5 +686,6 @@ contract Example {
         </div>
       </div>
     </section>
+    </>
   )
 }

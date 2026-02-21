@@ -50,6 +50,8 @@ export interface ReportMeta {
   generator: string;
   inference_backend: '0g' | 'local';
   version: string;
+  /** When true, analysis used premium/fine-tuned tier (extra compute). */
+  tier?: 'standard' | 'premium';
 }
 
 export interface ProphetReport {
