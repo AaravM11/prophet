@@ -35,6 +35,26 @@ const server = http.createServer(async (req, res) => {
   const path = fullUrl.split('?')[0];
   const queryStr = fullUrl.split('?')[1] ?? '';
   const query = Object.fromEntries(new URLSearchParams(queryStr));
+  if (req.method === 'GET' && (path === '/' || path === '')) {
+    res.writeHead(200);
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify({
+        service: 'Prophet Agent',
+        message: 'API server for contract analysis and simulation. Use the frontend app or call the API directly.',
+        health: '/health',
+        endpoints: [
+          'POST /analyze',
+          'POST /generate-attack',
+          'POST /simulate',
+          'POST /compile',
+          'GET  /audits?wallet=0x...',
+        ],
+      })
+    );
+    return;
+  }
+
   if (req.method === 'GET' && path === '/health') {
     res.writeHead(200);
     res.end(JSON.stringify({ status: 'ok', service: 'prophet-agent' }));
