@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 
 const DOCKER_IMAGE = process.env.FORGE_DOCKER_IMAGE || 'prophet-forge';
 const TIMEOUT_MS = Number(process.env.FORGE_TIMEOUT_MS) || 120_000;
@@ -28,6 +28,22 @@ function getForgeCommand(): string {
     if (fs.existsSync(p)) return p;
   }
   return 'forge';
+}
+
+function installLocalDeps(tmpDir: string, source: string): void {
+  const forgeCmd = getForgeCommand();
+  execSync(`git init`, { cwd: tmpDir, stdio: 'pipe' });
+  execSync(`${forgeCmd} install foundry-rs/forge-std --no-git`, { cwd: tmpDir, stdio: 'pipe', timeout: TIMEOUT_MS });
+  if (source.includes('@openzeppelin')) {
+    execSync(`${forgeCmd} install OpenZeppelin/openzeppelin-contracts --no-git`, { cwd: tmpDir, stdio: 'pipe', timeout: TIMEOUT_MS });
+    const tomlPath = path.join(tmpDir, 'foundry.toml');
+    let toml = fs.readFileSync(tomlPath, 'utf-8');
+    toml = toml.replace(
+      'remappings = ["forge-std/=lib/forge-std/src/"]',
+      'remappings = ["forge-std/=lib/forge-std/src/", "@openzeppelin/=lib/openzeppelin-contracts/"]'
+    );
+    fs.writeFileSync(tomlPath, toml);
+  }
 }
 
 const FOUNDRY_TOML = `[profile.default]
@@ -163,6 +179,7 @@ export async function compileSource(
       ));
     } else {
       const forgeCmd = getForgeCommand();
+      installLocalDeps(tmpDir, cleaned);
       ({ exitCode, output } = await runCommand(
         forgeCmd,
         ['build', '--names'],

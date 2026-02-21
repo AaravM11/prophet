@@ -550,33 +550,74 @@ async function* runDockerFoundry(
 // Local (unsandboxed) fallback execution
 // ---------------------------------------------------------------------------
 
+function detectDependencies(tmpDir: string): string[][] {
+  const deps: string[][] = [['foundry-rs/forge-std', '--no-git']];
+  const srcDir = path.join(tmpDir, 'src');
+  const testDir = path.join(tmpDir, 'test');
+  const files = [
+    ...(fs.existsSync(srcDir) ? fs.readdirSync(srcDir).map(f => path.join(srcDir, f)) : []),
+    ...(fs.existsSync(testDir) ? fs.readdirSync(testDir).map(f => path.join(testDir, f)) : []),
+  ];
+  let needsOz = false;
+  for (const f of files) {
+    try {
+      const content = fs.readFileSync(f, 'utf-8');
+      if (content.includes('@openzeppelin')) needsOz = true;
+    } catch { /* skip */ }
+  }
+  if (needsOz) {
+    deps.push(['OpenZeppelin/openzeppelin-contracts', '--no-git']);
+  }
+  return deps;
+}
+
+function patchRemappings(tmpDir: string): void {
+  const tomlPath = path.join(tmpDir, 'foundry.toml');
+  const libDir = path.join(tmpDir, 'lib');
+  if (!fs.existsSync(tomlPath)) return;
+  let toml = fs.readFileSync(tomlPath, 'utf-8');
+  if (fs.existsSync(path.join(libDir, 'openzeppelin-contracts')) && !toml.includes('@openzeppelin')) {
+    toml = toml.replace(
+      'remappings = ["forge-std/=lib/forge-std/src/"]',
+      'remappings = ["forge-std/=lib/forge-std/src/", "@openzeppelin/=lib/openzeppelin-contracts/"]'
+    );
+    fs.writeFileSync(tomlPath, toml);
+  }
+}
+
 async function* runLocalFoundry(
   tmpDir: string
 ): AsyncGenerator<StreamChunk, void, undefined> {
   yield { chunk: `[prophet] Running locally (no Docker sandbox)...\n` };
-  yield { chunk: `[prophet] Installing forge-std...\n` };
 
   for await (const msg of runCommand('git', ['init'], tmpDir)) {
     yield msg;
   }
 
   const forgeCmd = getForgeCommand();
-  for await (const msg of runCommand(
-    forgeCmd,
-    ['install', 'foundry-rs/forge-std', '--no-git'],
-    tmpDir,
-    TIMEOUT_MS
-  )) {
-    yield msg;
-    if (msg.done && msg.exitCode !== 0) {
-      yield {
-        chunk: `[prophet] forge install failed (exit ${msg.exitCode}). Is Foundry installed and git available?\n`,
-        done: true,
-        exitCode: msg.exitCode,
-      };
-      return;
+  const deps = detectDependencies(tmpDir);
+
+  for (const depArgs of deps) {
+    yield { chunk: `[prophet] Installing ${depArgs[0]}...\n` };
+    for await (const msg of runCommand(
+      forgeCmd,
+      ['install', ...depArgs],
+      tmpDir,
+      TIMEOUT_MS
+    )) {
+      yield msg;
+      if (msg.done && msg.exitCode !== 0) {
+        yield {
+          chunk: `[prophet] forge install ${depArgs[0]} failed (exit ${msg.exitCode}). Is Foundry installed and git available?\n`,
+          done: true,
+          exitCode: msg.exitCode,
+        };
+        return;
+      }
     }
   }
+
+  patchRemappings(tmpDir);
 
   yield { chunk: `[prophet] Running forge build...\n` };
   for await (const msg of runCommand(forgeCmd, ['build'], tmpDir, TIMEOUT_MS)) {
