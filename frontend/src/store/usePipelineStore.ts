@@ -176,7 +176,7 @@ export const usePipelineStore = create<PipelineState>((set) => ({
         return {
           originalCode: state.patchedCode,
           patchedCode: null,
-          currentStep: 3, // Re-run simulation
+          currentStep: 4,
         }
       }
       return {}

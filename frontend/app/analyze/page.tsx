@@ -9,17 +9,13 @@ import { PipelineStepper } from "@/components/pipeline-stepper"
 import { CodeEditor } from "@/components/code-editor"
 import { VulnerabilityReport } from "@/components/vulnerability-report"
 import { FuzzingTerminal } from "@/components/fuzzing-terminal"
-import { AiFixesPanel } from "@/components/ai-fixes-panel"
 import { Button } from "@/components/ui/button"
 import { WalletAuthButton } from "@/components/auth/WalletAuthButton"
 import { WalletReadyContext } from "@/app/providers"
-import { usePipelineStore } from "@/src/store/usePipelineStore"
 
 function AnalyzePageContent(): JSX.Element {
   const router = useRouter()
   const { isConnected } = useAccount()
-  const showFixesView = usePipelineStore((s) => s.showFixesView)
-  const setShowFixesView = usePipelineStore((s) => s.setShowFixesView)
 
   useEffect(() => {
     if (!isConnected) router.replace("/")
@@ -29,14 +25,6 @@ function AnalyzePageContent(): JSX.Element {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="font-mono text-sm text-muted-foreground">Redirecting…</p>
-      </div>
-    )
-  }
-
-  if (showFixesView) {
-    return (
-      <div className="flex h-screen flex-col bg-background">
-        <AiFixesPanel onBack={() => setShowFixesView(false)} />
       </div>
     )
   }
@@ -101,4 +89,3 @@ export default function AnalyzePage(): JSX.Element {
 
   return <AnalyzePageContent />
 }
-
