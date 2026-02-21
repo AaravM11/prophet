@@ -234,6 +234,14 @@ function fixCommonSolidityIssues(code: string): string {
     'address(uint160(uint256(keccak256(abi.encodePacked("$1")))))'
   );
 
+  // Wrap bare address literals in payable() when they're likely used as address payable args.
+  // address(0xdead) → payable(address(0xdead)), address(0x1) → payable(address(0x1)), etc.
+  // Only wraps if not already inside a payable() call.
+  f = f.replace(
+    /(?<!payable\()address\((0x[0-9a-fA-F]+)\)/g,
+    'payable(address($1))'
+  );
+
   return f;
 }
 
@@ -419,12 +427,16 @@ Return ONLY the fixed Solidity test file. No markdown, no explanations. Start wi
     const fixed = await call0GAI(prompt,
       `You are a Solidity compiler error fixer. Return ONLY valid Solidity code. No markdown fences. No explanations.
 Key rules:
+- "address payable" vs "address": If a function expects "address payable", wrap with payable(): e.g. payable(address(0xdead)). If error says "Invalid implicit conversion from address to address payable", add payable() around the address.
 - Use "address payable" for constructor params cast to contracts.
 - receive() and fallback() have NO "function" keyword.
-- makeAddr() only works inside contracts extending Test — outside use address(0x1) etc.
+- makeAddr() only works inside contracts extending Test — outside use address(1) etc.
+- For test addresses use payable(address(1)), payable(address(0xdead)), etc. Always wrap in payable() if the function param is "address payable".
 - Do NOT use inline assembly. Do NOT shadow state variables with parameter names.
 - "Member X not found" means you're calling a function on the WRONG contract. Check the SOURCE CONTRACT FUNCTIONS list — those belong to the TARGET contract instance, not the attacker.
-- ONLY call functions that appear in the SOURCE CONTRACT FUNCTIONS list. Do NOT invent function names.`
+- ONLY call functions that appear in the SOURCE CONTRACT FUNCTIONS list. Do NOT invent function names.
+- If a function doesn't exist in the source, REMOVE the call entirely rather than guessing.
+- All hex address literals must be valid hex: 0x followed by only [0-9a-fA-F] digits.`
     );
     let code = fixed.replace(/```solidity?\n?/g, '').replace(/```\n?/g, '').trim();
     if (code.includes('pragma solidity') || code.includes('// SPDX')) return code;
