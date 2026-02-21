@@ -18,9 +18,23 @@ const ANALYSIS_SYSTEM_PROMPT = `You are a smart contract security auditor. Analy
 
 Return ONLY valid JSON matching the ProphetReport schema.`;
 
-export async function analyze(source: string): Promise<ProphetReport> {
+const PREMIUM_ANALYSIS_ADDON = `
+PREMIUM / FINE-TUNED MODE: Perform a deeper analysis. Consider:
+- Additional vulnerability classes (e.g. front-running, oracle manipulation, access control, integer overflow in older Solidity).
+- More detailed exploit_paths with concrete step-by-step pre_state/post_state where possible.
+- Richer fix_suggestions with tradeoffs and diff_preview hints.
+Return the same JSON schema but with more thorough findings and explanations.`;
+
+export interface AnalyzeOptions {
+  /** Enable premium tier: extra compute, finer analysis (no charge). */
+  premium?: boolean;
+}
+
+export async function analyze(source: string, options?: AnalyzeOptions): Promise<ProphetReport> {
   const sourceHash = hashSource(source);
   const now = new Date().toISOString();
+  const premium = options?.premium === true;
+  const tier = premium ? 'premium' : 'standard';
 
   // Extract contract name from source
   const contractMatch = source.match(/contract\s+(\w+)/);
@@ -35,7 +49,7 @@ export async function analyze(source: string): Promise<ProphetReport> {
 ${source}
 \`\`\`
 
-Return a JSON report with risk_score, risk_level, summary, vulnerabilities, exploit_paths, and fix_suggestions.`;
+Return a JSON report with risk_score, risk_level, summary, vulnerabilities, exploit_paths, and fix_suggestions.${premium ? PREMIUM_ANALYSIS_ADDON : ''}`;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
@@ -61,6 +75,7 @@ Return a JSON report with risk_score, risk_level, summary, vulnerabilities, expl
             generator: 'prophet@alpha',
             inference_backend: '0g',
             version: '0.1.0',
+            tier,
           },
         };
       } catch (e) {
@@ -93,6 +108,7 @@ Return a JSON report with risk_score, risk_level, summary, vulnerabilities, expl
       generator: 'prophet@alpha',
       inference_backend: 'local',
       version: '0.1.0',
+      tier,
     },
   };
 }

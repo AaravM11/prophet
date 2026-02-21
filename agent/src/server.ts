@@ -55,13 +55,14 @@ const server = http.createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) body += chunk;
     try {
-      const { source } = JSON.parse(body) as { source?: string };
+      const parsed = JSON.parse(body) as { source?: string; premium?: boolean };
+      const { source, premium } = parsed;
       if (typeof source !== 'string') {
         res.writeHead(400);
         res.end(JSON.stringify({ error: 'Missing or invalid "source" string' }));
         return;
       }
-      const report = await analyze(source);
+      const report = await analyze(source, { premium });
       res.writeHead(200);
       res.end(JSON.stringify(report));
     } catch (e) {
