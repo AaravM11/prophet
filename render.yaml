@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: prophet-agent
+    runtime: docker
+    dockerfilePath: agent/Dockerfile
+    dockerContext: agent
+    plan: free
+    envVars:
+      - key: PRIVATE_KEY_DEPLOYER
+        sync: false
+      - key: ZG_INDEXER_RPC
+        value: https://indexer-storage-testnet-turbo.0g.ai
+      - key: 0G_RPC_URL
+        value: https://evmrpc-testnet.0g.ai
+      - key: RPC_URL_SEPOLIA
+        value: https://evmrpc-testnet.0g.ai
+      - key: USE_DOCKER_SANDBOX
+        value: "false"
