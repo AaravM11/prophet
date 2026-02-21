@@ -422,9 +422,12 @@ Key rules:
 - Use "address payable" for constructor params cast to contracts.
 - receive() and fallback() have NO "function" keyword.
 - makeAddr() only works inside contracts extending Test — outside use address(0x1) etc.
+- For test addresses use address(1), address(2), etc. NEVER use address(0xburn) or other non-hex literals.
 - Do NOT use inline assembly. Do NOT shadow state variables with parameter names.
 - "Member X not found" means you're calling a function on the WRONG contract. Check the SOURCE CONTRACT FUNCTIONS list — those belong to the TARGET contract instance, not the attacker.
-- ONLY call functions that appear in the SOURCE CONTRACT FUNCTIONS list. Do NOT invent function names.`
+- ONLY call functions that appear in the SOURCE CONTRACT FUNCTIONS list. Do NOT invent function names.
+- If a function doesn't exist in the source, REMOVE the call entirely rather than guessing.
+- All hex address literals must be valid hex: 0x followed by only [0-9a-fA-F] digits.`
     );
     let code = fixed.replace(/```solidity?\n?/g, '').replace(/```\n?/g, '').trim();
     if (code.includes('pragma solidity') || code.includes('// SPDX')) return code;
