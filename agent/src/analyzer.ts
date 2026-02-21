@@ -26,46 +26,48 @@ export async function analyze(source: string): Promise<ProphetReport> {
   const contractMatch = source.match(/contract\s+(\w+)/);
   const contractName = contractMatch ? contractMatch[1] : STUB_CONTRACT_NAME;
 
-  // Try 0G AI analysis if available
+  // Try 0G AI analysis with retries (0G sometimes returns invalid JSON)
+  const MAX_RETRIES = 3;
   if (is0GAvailable()) {
-    try {
-      const prompt = `Analyze this Solidity contract for security vulnerabilities:
+    const prompt = `Analyze this Solidity contract for security vulnerabilities:
 
 \`\`\`solidity
 ${source}
 \`\`\`
 
 Return a JSON report with risk_score, risk_level, summary, vulnerabilities, exploit_paths, and fix_suggestions.`;
-      
-      const aiResponse = await call0GAI(prompt, ANALYSIS_SYSTEM_PROMPT);
-      // Try to parse JSON from response
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
+        const aiResponse = await call0GAI(prompt, ANALYSIS_SYSTEM_PROMPT);
         const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          return {
-            contract_name: contractName,
-            source_hash: sourceHash,
-            risk_score: parsed.risk_score ?? 0,
-            risk_level: parsed.risk_level ?? 'low',
-            summary: parsed.summary ?? 'AI analysis completed',
-            vulnerabilities: parsed.vulnerabilities ?? [],
-            exploit_paths: parsed.exploit_paths ?? [],
-            fix_suggestions: parsed.fix_suggestions ?? [],
-            meta: {
-              generated_at: now,
-              generator: 'prophet@alpha',
-              inference_backend: '0g',
-              version: '0.1.0',
-            },
-          };
+        if (!jsonMatch) {
+          console.warn(`[Analyzer] Attempt ${attempt}/${MAX_RETRIES}: no JSON in response (${aiResponse.length} chars)`);
+          continue;
         }
+        const parsed = JSON.parse(jsonMatch[0]);
+        console.log(`[Analyzer] 0G analysis succeeded (attempt ${attempt})`);
+        return {
+          contract_name: contractName,
+          source_hash: sourceHash,
+          risk_score: parsed.risk_score ?? 0,
+          risk_level: parsed.risk_level ?? 'low',
+          summary: parsed.summary ?? 'AI analysis completed',
+          vulnerabilities: parsed.vulnerabilities ?? [],
+          exploit_paths: parsed.exploit_paths ?? [],
+          fix_suggestions: parsed.fix_suggestions ?? [],
+          meta: {
+            generated_at: now,
+            generator: 'prophet@alpha',
+            inference_backend: '0g',
+            version: '0.1.0',
+          },
+        };
       } catch (e) {
-        console.warn('[Analyzer] 0G response invalid, using stub report.');
+        console.warn(`[Analyzer] Attempt ${attempt}/${MAX_RETRIES} failed:`, (e as Error).message);
       }
-    } catch (e) {
-      console.warn('[Analyzer] Using stub report (0G unavailable).');
     }
+    console.warn(`[Analyzer] All ${MAX_RETRIES} attempts failed, using stub report.`);
   }
 
   // Fallback: stub report (0G offline or unavailable)
