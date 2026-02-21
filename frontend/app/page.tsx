@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Shield, ArrowRight } from "lucide-react"
@@ -34,6 +34,14 @@ const colorMap: Record<LineType, string> = {
 
 /* ── Page ── */
 export default function HomePage() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
+  )
+}
+
+function HomeContent() {
   const [visibleCount, setVisibleCount] = useState(0)
   const searchParams = useSearchParams()
   const router = useRouter()
