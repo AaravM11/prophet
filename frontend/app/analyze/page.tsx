@@ -1,12 +1,27 @@
+"use client"
+
 import { Shield } from "lucide-react"
 import Link from "next/link"
 import { PipelineStepper } from "@/components/pipeline-stepper"
 import { CodeEditor } from "@/components/code-editor"
 import { VulnerabilityReport } from "@/components/vulnerability-report"
 import { FuzzingTerminal } from "@/components/fuzzing-terminal"
+import { AiFixesPanel } from "@/components/ai-fixes-panel"
 import { Button } from "@/components/ui/button"
+import { usePipelineStore } from "@/src/store/usePipelineStore"
 
 export default function AnalyzePage(): JSX.Element {
+  const showFixesView = usePipelineStore((s) => s.showFixesView)
+  const setShowFixesView = usePipelineStore((s) => s.setShowFixesView)
+
+  if (showFixesView) {
+    return (
+      <div className="flex h-screen flex-col bg-background">
+        <AiFixesPanel onBack={() => setShowFixesView(false)} />
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen flex-col bg-background">
       <header className="flex items-center justify-between border-b border-border/80 bg-card/50 px-5 py-2.5">

@@ -82,6 +82,9 @@ interface PipelineState {
   // Contract name parsed from source by analyzer (used for generate-attack so tests match the real contract)
   analyzedContractName: string | null
 
+  // UI: show AI fixes panel (inline, no route)
+  showFixesView: boolean
+
   // Actions
   setCode: (code: string, fileName?: string) => void
   setPatchedCode: (code: string) => void
@@ -105,6 +108,7 @@ interface PipelineState {
   stopFuzzing: () => void
   setGeneratedTestCode: (code: string | null) => void
   setManualTestCode: (code: string | null) => void
+  setShowFixesView: (show: boolean) => void
 }
 
 export const usePipelineStore = create<PipelineState>((set) => ({
@@ -127,6 +131,7 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   manualTestCode: null,
   simulationCode: null,
   analyzedContractName: null,
+  showFixesView: false,
 
   // Actions
   setCode: (code: string, fileName = "contract.sol") =>
@@ -187,4 +192,5 @@ export const usePipelineStore = create<PipelineState>((set) => ({
 
   setGeneratedTestCode: (code) => set({ generatedTestCode: code }),
   setManualTestCode: (code) => set({ manualTestCode: code }),
+  setShowFixesView: (show) => set({ showFixesView: show }),
 }))

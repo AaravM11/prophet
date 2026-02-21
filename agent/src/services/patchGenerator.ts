@@ -1,7 +1,7 @@
 /**
- * Patch Generator: Uses 0G AI to generate Solidity patches from crash traces.
- * Phase 2: Reads Foundry execution traces and generates fixes.
+ * Patch Generator: Uses 0G AI to generate Solidity patches from crash traces or analysis reports.
  */
+import type { ProphetReport } from '../types/report.js';
 import { call0GAI, is0GAvailable } from './0gService.js';
 
 const PATCH_SYSTEM_PROMPT = `You are a smart contract remediation expert. Your task is to read Solidity code and Foundry execution crash traces, then generate exact patched Solidity code that fixes the vulnerability exposed in the trace.
@@ -98,4 +98,64 @@ function generateMockPatch(originalCode: string, crashTrace: string): string {
 // 2. Identify vulnerability
 // 3. Apply security fixes (reentrancy guards, checks-effects-interactions, etc.)
 // 4. Return complete patched contract`;
+}
+
+const FIX_FROM_REPORT_SYSTEM_PROMPT = `You are a smart contract remediation expert. You are given an original Solidity contract and a security audit report (vulnerabilities and fix suggestions). Your task is to generate the complete patched Solidity code that fixes the reported vulnerabilities.
+
+You must return ONLY valid Solidity code - the complete patched contract. The patch should:
+1. Fix all reported vulnerabilities (reentrancy, overflow, access control, etc.)
+2. Follow the suggested fix strategies where provided
+3. Maintain the contract's intended functionality
+4. Follow security best practices (checks-effects-interactions, reentrancy guards, etc.)
+5. Be compilable and ready to deploy
+
+Return ONLY the Solidity code, no markdown, no explanations, no code fences. Start with "// SPDX-License-Identifier: MIT" or "pragma solidity".`;
+
+/**
+ * Generate a patched contract using the analysis report (vulnerabilities + fix_suggestions).
+ * Uses 0G AI to produce fixes based on the audit findings.
+ */
+export async function generateFixFromReport(
+  originalCode: string,
+  report: ProphetReport
+): Promise<string> {
+  const vulnSummary =
+    report.vulnerabilities.length > 0
+      ? report.vulnerabilities
+          .map((v) => `- [${v.severity}] ${v.title}: ${v.explanation}`)
+          .join('\n')
+      : 'None listed.';
+  const fixSummary =
+    report.fix_suggestions.length > 0
+      ? report.fix_suggestions
+          .map((f) => `- ${f.title} (${f.strategy}): ${f.explanation}`)
+          .join('\n')
+      : 'None listed.';
+
+  const prompt = `Original Solidity contract:
+
+\`\`\`solidity
+${originalCode}
+\`\`\`
+
+Security audit findings:
+Vulnerabilities:
+${vulnSummary}
+
+Fix suggestions:
+${fixSummary}
+
+Write the complete patched Solidity contract that fixes these vulnerabilities. Return ONLY the patched code, no markdown.`;
+
+  if (!is0GAvailable()) {
+    return generateMockPatch(originalCode, `Report: ${report.summary ?? 'No summary'}`);
+  }
+
+  try {
+    const raw = await call0GAI(prompt, FIX_FROM_REPORT_SYSTEM_PROMPT);
+    return extractSolidityCode(raw);
+  } catch (e) {
+    console.error('[PatchGenerator] Failed to generate fix from report:', e);
+    return generateMockPatch(originalCode, `Report error: ${(e as Error).message}`);
+  }
 }

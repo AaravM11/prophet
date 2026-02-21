@@ -9,7 +9,7 @@ import http from 'node:http';
 import type { ProphetReport } from './types/report.js';
 import { analyze } from './analyzer.js';
 import { generateAttack, generateAttackFromReport } from './services/attackGenerator.js';
-import { generatePatch } from './services/patchGenerator.js';
+import { generatePatch, generateFixFromReport } from './services/patchGenerator.js';
 import { runFoundryTests } from './services/simulationService.js';
 import { get0GAccountBalance } from './services/0gService.js';
 
@@ -155,6 +155,39 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && path === '/generate-fix') {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    try {
+      const parsed = JSON.parse(body) as { source?: string; report?: Partial<ProphetReport> };
+      const { source, report } = parsed;
+      if (typeof source !== 'string' || !report) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Missing or invalid "source" or "report"' }));
+        return;
+      }
+      const contractName = report.contract_name ?? source.match(/contract\s+(\w+)/)?.[1] ?? 'Contract';
+      const fullReport: ProphetReport = {
+        contract_name: contractName,
+        source_hash: report.source_hash ?? '',
+        risk_score: report.risk_score ?? 0,
+        risk_level: report.risk_level ?? 'low',
+        summary: report.summary ?? '',
+        vulnerabilities: report.vulnerabilities ?? [],
+        exploit_paths: report.exploit_paths ?? [],
+        fix_suggestions: report.fix_suggestions ?? [],
+        meta: report.meta ?? { generated_at: '', generator: '', inference_backend: 'local', version: '' },
+      };
+      const patchedCode = await generateFixFromReport(source, fullReport);
+      res.writeHead(200);
+      res.end(JSON.stringify({ patchedCode }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String(e) }));
+    }
+    return;
+  }
+
   if (req.method === 'POST' && path === '/generate-patch') {
     let body = '';
     for await (const chunk of req) body += chunk;
@@ -194,5 +227,6 @@ server.listen(PORT, () => {
   console.log(`  POST /analyze - Analyze contract (returns ProphetReport)`);
   console.log(`  POST /generate-attack - Generate Foundry test (optional report for targeted attacks)`);
   console.log(`  POST /simulate - Run Foundry tests, stream output`);
+  console.log(`  POST /generate-fix - Generate patched contract from analysis report`);
   console.log(`  POST /generate-patch - Generate patched contract from crash trace`);
 });
