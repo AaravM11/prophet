@@ -31,7 +31,7 @@ function AnalyzePageContent(): JSX.Element {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <header className="flex items-center justify-between border-b border-border/80 bg-card/50 px-5 py-2.5">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/80 bg-card/50 px-5 py-2.5">
         <div className="flex items-center gap-3">
           <div className="flex size-8 items-center justify-center rounded-lg border border-emerald-500/25 bg-emerald-500/10">
             <Shield className="size-4 text-emerald-500" aria-hidden="true" />
@@ -45,7 +45,9 @@ function AnalyzePageContent(): JSX.Element {
             </p>
           </div>
         </div>
-        <PipelineStepper />
+        <div className="flex flex-1 justify-center px-6 min-w-0">
+          <PipelineStepper />
+        </div>
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
             Foundry

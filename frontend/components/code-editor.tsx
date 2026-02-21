@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useEffect, useMemo } from "react"
+import { useRef, useState, useEffect, useMemo, useCallback } from "react"
 import { useAccount, useSendTransaction } from "wagmi"
 import {
   FileCode2,
@@ -140,6 +140,30 @@ function DiffStats({ oldCode, newCode }: { oldCode: string; newCode: string }) {
       <span className="text-red-500">−{deletions}</span>
     </span>
   )
+}
+
+/** Derive a descriptive vulnerability heading from API fields (avoids generic "Finding"). */
+function descriptiveVulnTitle(
+  rawTitle: string,
+  type?: string,
+  id?: string,
+  explanation?: string
+): string {
+  const t = (rawTitle ?? "").trim()
+  if (t && t.toLowerCase() !== "finding" && t.length > 2) return t
+  if (type?.trim()) {
+    const formatted = type.trim().replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    if (formatted.length > 2) return formatted
+  }
+  if (id?.trim()) {
+    const formatted = id.trim().replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    if (formatted.length > 2) return formatted
+  }
+  if (explanation?.trim()) {
+    const first = explanation.trim().split(/[.!?\n]/)[0]?.trim() ?? ""
+    if (first.length > 10) return first.length > 72 ? first.slice(0, 69) + "…" : first
+  }
+  return "Security finding"
 }
 
 // ---------------------------------------------------------------------------
@@ -333,16 +357,25 @@ contract Example {
       }
 
       const riskScoreVal = report.risk_score <= 1 ? report.risk_score * 100 : report.risk_score
-      const vulns = (report.vulnerabilities ?? []).map((v, i) => ({
+      const vulns = (report.vulnerabilities ?? []).map((v, i) => {
+        const rawTitle = v.title ?? v.type ?? ""
+        const descriptiveTitle = descriptiveVulnTitle(
+          rawTitle,
+          v.type,
+          v.id,
+          v.explanation ?? v.description ?? ""
+        )
+        return {
         id: v.id ?? v.type ?? `vuln-${i}`,
-        title: v.title ?? v.type ?? "Finding",
+        title: descriptiveTitle,
         severity: v.severity ?? ("medium" as const),
         confidence: typeof v.confidence === "number" ? v.confidence : 0.8,
         locations: v.locations ?? [],
         explanation: v.explanation ?? v.description ?? "",
         evidence: undefined,
         references: undefined,
-      }))
+      }
+      })
       const exploitPaths = (report.exploit_paths ?? []).map((p) => ({
         name: p.name ?? "Attack path",
         steps: (Array.isArray(p.steps) ? p.steps : []).map((s): ExploitStep => {
@@ -506,24 +539,22 @@ contract Example {
 
           {hasPatch && (
             <>
-              <div className="flex items-center rounded-md border border-border bg-[#0d0d0d] p-0.5">
+              <div className="flex items-center gap-1 rounded-md border border-border bg-[#0d0d0d] p-0.5">
                 <button
                   onClick={() => setShowFixesView(false)}
-                  className={`flex items-center gap-1 rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                    !isDiffMode
-                      ? "bg-secondary text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                  className={cn(
+                    "rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                    !isDiffMode ? "bg-secondary text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
                   Original
                 </button>
                 <button
                   onClick={() => setShowFixesView(true)}
-                  className={`flex items-center gap-1 rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                    isDiffMode
-                      ? "bg-emerald-500/15 text-emerald-400 shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                  className={cn(
+                    "rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                    isDiffMode ? "bg-emerald-500/15 text-emerald-400 shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
                   Fixed
                 </button>
@@ -592,9 +623,9 @@ contract Example {
       </div>
 
       {/* Code / diff area */}
-      <div className="flex-1 overflow-auto p-0 relative" role="code" aria-label="Solidity smart contract source code">
+      <div className="flex-1 overflow-auto p-0 relative min-h-0" role="code" aria-label="Solidity smart contract source code">
         {isDiffMode ? (
-          <InlineDiffView oldCode={originalCode} newCode={patchedCode!} />
+          <InlineDiffView oldCode={originalCode} newCode={patchedCode ?? ""} />
         ) : (
           <>
             {/* Syntax-highlighted preview */}

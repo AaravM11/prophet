@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams, useRouter } from "next/navigation"
 import { Shield, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { WalletAuthButton } from "@/components/auth/WalletAuthButton"
@@ -34,6 +35,9 @@ const colorMap: Record<LineType, string> = {
 /* ── Page ── */
 export default function HomePage() {
   const [visibleCount, setVisibleCount] = useState(0)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const redirectTo = searchParams.get('redirect')
 
   useEffect(() => {
     if (visibleCount >= terminalLines.length) return
@@ -41,6 +45,36 @@ export default function HomePage() {
     const timer = setTimeout(() => setVisibleCount((c) => c + 1), delay)
     return () => clearTimeout(timer)
   }, [visibleCount])
+
+  // When URL has ?redirect=... and user is authenticated, send them there (e.g. after SIWE)
+  useEffect(() => {
+    if (!redirectTo || !redirectTo.startsWith('/')) return
+    let cancelled = false
+    let intervalId: ReturnType<typeof setInterval> | null = null
+    const check = async (): Promise<boolean> => {
+      const res = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'include' })
+      if (cancelled) return false
+      const data = await res.json().catch(() => ({ user: null }))
+      if (data?.user) {
+        router.replace(redirectTo)
+        return true
+      }
+      return false
+    }
+    void check().then((done) => {
+      if (done || cancelled) return
+      intervalId = setInterval(() => {
+        if (cancelled) return
+        void check().then((done) => {
+          if (done && intervalId) clearInterval(intervalId)
+        })
+      }, 1500)
+    })
+    return () => {
+      cancelled = true
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [redirectTo, router])
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background text-foreground overflow-hidden">

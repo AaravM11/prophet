@@ -16,7 +16,7 @@ export function PipelineStepper() {
   return (
     <nav
       aria-label="Deployment pipeline progress"
-      className="flex items-center justify-center gap-0 px-6"
+      className="flex flex-wrap items-center justify-center gap-0"
     >
       {steps.map((step, index) => {
         const isCompleted = step.id < currentStep

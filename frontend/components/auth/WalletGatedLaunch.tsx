@@ -2,6 +2,7 @@
 
 import { useContext } from 'react'
 import Link from "next/link"
+import { useSearchParams } from 'next/navigation'
 import { ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useAccount } from 'wagmi'
@@ -31,6 +32,9 @@ export function WalletGatedLaunch(): JSX.Element {
 function WalletGatedLaunchInner(): JSX.Element {
   const { isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
+  const searchParams = useSearchParams()
+  const redirect = searchParams.get('redirect')
+  const launchHref = redirect?.startsWith('/') ? redirect : '/dashboard'
 
   if (!isConnected) {
     return (
@@ -47,7 +51,7 @@ function WalletGatedLaunchInner(): JSX.Element {
 
   return (
     <Button asChild size="lg" className={launchButtonClass}>
-      <Link href="/dashboard">
+      <Link href={launchHref}>
         Launch
         <ArrowRight className="ml-2 size-4 transition group-hover:translate-x-0.5" />
       </Link>
@@ -73,6 +77,9 @@ export function WalletGatedLaunchHeader(): JSX.Element {
 function WalletGatedLaunchHeaderInner(): JSX.Element {
   const { isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
+  const searchParams = useSearchParams()
+  const redirect = searchParams.get('redirect')
+  const launchHref = redirect?.startsWith('/') ? redirect : '/dashboard'
 
   if (!isConnected) {
     return (
@@ -88,7 +95,7 @@ function WalletGatedLaunchHeaderInner(): JSX.Element {
 
   return (
     <Button asChild className="group bg-accent text-accent-foreground hover:bg-accent/90">
-      <Link href="/dashboard">
+      <Link href={launchHref}>
         Launch
         <ArrowRight className="ml-1 size-3.5 transition group-hover:translate-x-0.5" />
       </Link>
